@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
-import type { ProductMapping, PricingRule, Quote, AllowedOptions, OptionGroup } from '../types'
+import type { ProductMapping, PricingRule, Quote, AllowedOptions, OptionGroup, TipoListino } from '../types'
 
 type Tab = 'listini' | 'prodotti' | 'pricing' | 'quotes'
 
@@ -59,12 +59,43 @@ export default function AdminPage() {
    TAB LISTINI  (famiglie → listini drill-down)
 ══════════════════════════════════════════════ */
 
+const TIPI_LISTINO: { tipo: TipoListino; label: string; desc: string; icon: string }[] = [
+  {
+    tipo: 'griglia',
+    label: 'Griglia',
+    desc: 'Prezzi fissi per combinazioni di misure standard (es. 60×90, 80×120…)',
+    icon: '⊞',
+  },
+  {
+    tipo: 'catalogo-prodotti',
+    label: 'Catalogo Prodotti',
+    desc: 'Prodotti con foto, varianti e prezzo fisso senza misure personalizzabili.',
+    icon: '📋',
+  },
+  {
+    tipo: 'prodotti-su-misura',
+    label: 'Prodotti su Misura',
+    desc: 'Configuratore con larghezza × altezza personalizzate e opzioni a scelta.',
+    icon: '📐',
+  },
+]
+
+function tipoBadge(tipo: TipoListino | undefined) {
+  const t = TIPI_LISTINO.find(x => x.tipo === tipo)
+  return t ? (
+    <span style={{ background: 'var(--ci-teal-light)', color: 'var(--ci-teal)', borderRadius: '4px', padding: '0.15rem 0.5rem', fontSize: '0.72rem', fontWeight: 600, marginLeft: '0.5rem' }}>
+      {t.icon} {t.label}
+    </span>
+  ) : null
+}
+
 function ListiniTab() {
   const [famiglie, setFamiglie] = useState<Famiglia[]>([])
   const [listiniMap, setListiniMap] = useState<Record<string, Listino[]>>({})
   const [loading, setLoading] = useState(true)
   const [selectedFamiglia, setSelectedFamiglia] = useState<Famiglia | null>(null)
   const [showFamigliaForm, setShowFamigliaForm] = useState(false)
+  const [showTipoSelezione, setShowTipoSelezione] = useState(false)
   const [showListinoForm, setShowListinoForm] = useState(false)
   const [editingListino, setEditingListino] = useState<Listino | null>(null)
 
@@ -113,10 +144,17 @@ function ListiniTab() {
   }
 
   // ── Listino CRUD ──
-  function openNewListino() {
+  function openTipoSelezione() {
     setEditingListino(null)
     setLNome(''); setLSlug(''); setLOpts(emptyOptions())
     setNewGroupKey(''); setNewGroupLabel(''); setNewValueByGroup({})
+    setShowListinoForm(false)
+    setShowTipoSelezione(true)
+  }
+
+  function selectTipo(tipo: TipoListino) {
+    setLOpts(emptyOptions(tipo))
+    setShowTipoSelezione(false)
     setShowListinoForm(true)
   }
 
@@ -124,6 +162,7 @@ function ListiniTab() {
     setEditingListino(l)
     setLNome(l.nome); setLSlug(l.slug); setLOpts(l.options_json)
     setNewGroupKey(''); setNewGroupLabel(''); setNewValueByGroup({})
+    setShowTipoSelezione(false)
     setShowListinoForm(true)
   }
 
@@ -172,21 +211,56 @@ function ListiniTab() {
   // ── Vista listini di una famiglia ──
   if (selectedFamiglia) {
     const listini = listiniMap[selectedFamiglia.id] ?? []
+    const tipoCorrente = lOpts.tipo
+    const tipoInfo = TIPI_LISTINO.find(t => t.tipo === tipoCorrente)
     return (
       <div>
         {/* Breadcrumb */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.5rem' }}>
-          <button onClick={() => { setSelectedFamiglia(null); setShowListinoForm(false) }} style={{ ...editBtnStyle, fontSize: '0.875rem' }}>
+          <button onClick={() => { setSelectedFamiglia(null); setShowListinoForm(false); setShowTipoSelezione(false) }} style={{ ...editBtnStyle, fontSize: '0.875rem' }}>
             ← Famiglie
           </button>
           <span style={{ color: 'var(--ci-text-muted)' }}>/</span>
           <span style={{ fontFamily: 'Montserrat, sans-serif', fontWeight: 600, color: 'var(--ci-graphite)' }}>{selectedFamiglia.nome}</span>
         </div>
 
-        {/* Form listino */}
-        {showListinoForm ? (
+        {/* Selezione tipo */}
+        {showTipoSelezione && (
           <div className="ci-card" style={{ padding: '1.5rem', marginBottom: '1.5rem' }}>
-            <h2 style={sectionTitleStyle}>{editingListino ? `Modifica listino: ${editingListino.nome}` : 'Nuovo listino'}</h2>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+              <h2 style={sectionTitleStyle}>Che tipo di listino vuoi creare?</h2>
+              <button onClick={() => setShowTipoSelezione(false)} style={cancelBtnStyle}>Annulla</button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '1rem' }}>
+              {TIPI_LISTINO.map(t => (
+                <button key={t.tipo} onClick={() => selectTipo(t.tipo)} style={{
+                  border: '2px solid var(--ci-border)', borderRadius: '10px', padding: '1.5rem 1.25rem',
+                  background: 'var(--ci-bg)', cursor: 'pointer', textAlign: 'left',
+                  transition: 'border-color 0.15s, box-shadow 0.15s',
+                  display: 'flex', flexDirection: 'column', gap: '0.5rem',
+                }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--ci-teal)'; (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 0 3px var(--ci-teal-light)' }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--ci-border)'; (e.currentTarget as HTMLButtonElement).style.boxShadow = 'none' }}>
+                  <span style={{ fontSize: '1.75rem', lineHeight: 1 }}>{t.icon}</span>
+                  <span style={{ fontFamily: 'Montserrat, sans-serif', fontWeight: 700, fontSize: '0.95rem', color: 'var(--ci-graphite)' }}>{t.label}</span>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--ci-text-muted)', lineHeight: 1.4 }}>{t.desc}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Form listino */}
+        {showListinoForm && (
+          <div className="ci-card" style={{ padding: '1.5rem', marginBottom: '1.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <h2 style={sectionTitleStyle}>{editingListino ? `Modifica: ${editingListino.nome}` : 'Nuovo listino'}</h2>
+              {tipoInfo && (
+                <span style={{ background: 'var(--ci-teal-light)', color: 'var(--ci-teal)', borderRadius: '6px', padding: '0.3rem 0.75rem', fontSize: '0.8rem', fontWeight: 600 }}>
+                  {tipoInfo.icon} {tipoInfo.label}
+                </span>
+              )}
+            </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1.25rem' }}>
               <div>
                 <label style={labelStyle}>Nome listino</label>
@@ -198,54 +272,67 @@ function ListiniTab() {
               </div>
             </div>
 
-            <h3 style={subTitleStyle}>Dimensioni</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '0.75rem', marginBottom: '1.25rem' }}>
-              {(['larghezza_min','larghezza_max','altezza_min','altezza_max'] as const).map(f => (
-                <div key={f}>
-                  <label style={labelStyle}>{f.replace('_',' ')} (cm)</label>
-                  <input className="ci-input" type="number" value={lOpts[f]} onChange={e => setLOpts(o => ({ ...o, [f]: Number(e.target.value) }))} />
+            {tipoCorrente === 'prodotti-su-misura' && (
+              <>
+                <h3 style={subTitleStyle}>Dimensioni</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '0.75rem', marginBottom: '1.25rem' }}>
+                  {(['larghezza_min','larghezza_max','altezza_min','altezza_max'] as const).map(f => (
+                    <div key={f}>
+                      <label style={labelStyle}>{f.replace('_',' ')} (cm)</label>
+                      <input className="ci-input" type="number" value={lOpts[f]} onChange={e => setLOpts(o => ({ ...o, [f]: Number(e.target.value) }))} />
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
 
-            <h3 style={subTitleStyle}>Campi configuratore</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1rem' }}>
-              {lOpts.opzioni.map(group => (
-                <OptionGroupEditor key={group.key} group={group}
-                  newValue={newValueByGroup[group.key] ?? ''}
-                  onNewValueChange={v => setNewValueByGroup(p => ({ ...p, [group.key]: v }))}
-                  onAddValue={() => addValue(group.key)}
-                  onRemoveValue={val => removeValue(group.key, val)}
-                  onRemoveGroup={() => removeGroup(group.key)} />
-              ))}
-              {lOpts.opzioni.length === 0 && <p style={{ fontSize: '0.8rem', color: 'var(--ci-text-muted)', fontStyle: 'italic' }}>Nessun campo aggiunto.</p>}
-            </div>
+                <h3 style={subTitleStyle}>Campi configuratore</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1rem' }}>
+                  {lOpts.opzioni.map(group => (
+                    <OptionGroupEditor key={group.key} group={group}
+                      newValue={newValueByGroup[group.key] ?? ''}
+                      onNewValueChange={v => setNewValueByGroup(p => ({ ...p, [group.key]: v }))}
+                      onAddValue={() => addValue(group.key)}
+                      onRemoveValue={val => removeValue(group.key, val)}
+                      onRemoveGroup={() => removeGroup(group.key)} />
+                  ))}
+                  {lOpts.opzioni.length === 0 && <p style={{ fontSize: '0.8rem', color: 'var(--ci-text-muted)', fontStyle: 'italic' }}>Nessun campo aggiunto.</p>}
+                </div>
+                <div style={{ display: 'flex', gap: '0.5rem', padding: '1rem', background: 'var(--ci-bg)', borderRadius: '8px', marginBottom: '1.25rem' }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={labelStyle}>Chiave (es. colore, vetro)</label>
+                    <input className="ci-input" placeholder="colore" value={newGroupKey} onChange={e => setNewGroupKey(e.target.value)} onKeyDown={e => e.key === 'Enter' && addGroup()} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={labelStyle}>Etichetta (mostrata al cliente)</label>
+                    <input className="ci-input" placeholder="Colore" value={newGroupLabel} onChange={e => setNewGroupLabel(e.target.value)} onKeyDown={e => e.key === 'Enter' && addGroup()} />
+                  </div>
+                  <button onClick={addGroup} className="ci-btn ci-btn--teal" style={{ whiteSpace: 'nowrap', alignSelf: 'flex-end' }}>+ Campo</button>
+                </div>
+              </>
+            )}
 
-            <div style={{ display: 'flex', gap: '0.5rem', padding: '1rem', background: 'var(--ci-bg)', borderRadius: '8px', marginBottom: '1.25rem' }}>
-              <div style={{ flex: 1 }}>
-                <label style={labelStyle}>Chiave (es. colore, vetro)</label>
-                <input className="ci-input" placeholder="colore" value={newGroupKey} onChange={e => setNewGroupKey(e.target.value)} onKeyDown={e => e.key === 'Enter' && addGroup()} />
+            {(tipoCorrente === 'griglia' || tipoCorrente === 'catalogo-prodotti') && (
+              <div style={{ background: 'var(--ci-bg)', border: '1px dashed var(--ci-border)', borderRadius: '8px', padding: '1.5rem', marginBottom: '1.25rem', textAlign: 'center', color: 'var(--ci-text-muted)', fontSize: '0.875rem' }}>
+                La configurazione dettagliata per <strong>{tipoInfo?.label}</strong> sarà disponibile nelle prossime versioni.<br />
+                Per ora puoi già creare il listino e impostarne il nome.
               </div>
-              <div style={{ flex: 1 }}>
-                <label style={labelStyle}>Etichetta (mostrata al cliente)</label>
-                <input className="ci-input" placeholder="Colore" value={newGroupLabel} onChange={e => setNewGroupLabel(e.target.value)} onKeyDown={e => e.key === 'Enter' && addGroup()} />
-              </div>
-              <button onClick={addGroup} className="ci-btn ci-btn--teal" style={{ whiteSpace: 'nowrap', alignSelf: 'flex-end' }}>+ Campo</button>
-            </div>
+            )}
 
             <div style={{ display: 'flex', gap: '0.75rem' }}>
               <button onClick={saveListino} className="ci-btn ci-btn--teal">{editingListino ? 'Aggiorna' : 'Crea listino'}</button>
               <button onClick={() => { setShowListinoForm(false); setEditingListino(null) }} style={cancelBtnStyle}>Annulla</button>
             </div>
           </div>
-        ) : (
-          <button onClick={openNewListino} className="ci-btn ci-btn--teal" style={{ marginBottom: '1.5rem' }}>
+        )}
+
+        {/* Bottone nuovo listino (solo se nessun form aperto) */}
+        {!showListinoForm && !showTipoSelezione && (
+          <button onClick={openTipoSelezione} className="ci-btn ci-btn--teal" style={{ marginBottom: '1.5rem' }}>
             + Nuovo listino
           </button>
         )}
 
         {/* Lista listini */}
-        {listini.length === 0 && !showListinoForm ? (
+        {listini.length === 0 && !showListinoForm && !showTipoSelezione ? (
           <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--ci-text-muted)', fontFamily: 'Montserrat, sans-serif', fontSize: '0.9rem' }}>
             Nessun listino. Clicca "+ Nuovo listino" per iniziare.
           </div>
@@ -256,8 +343,9 @@ function ListiniTab() {
                 <div>
                   <span style={{ fontFamily: 'Montserrat, sans-serif', fontWeight: 600, color: 'var(--ci-graphite)' }}>{l.nome}</span>
                   <code style={{ marginLeft: '0.75rem', fontSize: '0.75rem', color: 'var(--ci-text-muted)', background: 'var(--ci-bg)', padding: '0.15rem 0.4rem', borderRadius: '4px' }}>{l.slug}</code>
+                  {tipoBadge(l.options_json?.tipo)}
                   <span style={{ marginLeft: '0.75rem', fontSize: '0.8rem', color: 'var(--ci-text-muted)' }}>
-                    {l.options_json?.opzioni?.map(g => g.label).join(', ') || 'nessun campo'}
+                    {l.options_json?.opzioni?.map(g => g.label).join(', ') || ''}
                   </span>
                 </div>
                 <div style={{ display: 'flex', gap: '0.75rem' }}>
@@ -635,8 +723,8 @@ function QuotesTab() {
    COMPONENTI CONDIVISI
 ══════════════════════════════════════════════ */
 
-function emptyOptions(): AllowedOptions {
-  return { opzioni: [], larghezza_min: 60, larghezza_max: 350, altezza_min: 60, altezza_max: 280 }
+function emptyOptions(tipo: TipoListino = 'prodotti-su-misura'): AllowedOptions {
+  return { tipo, opzioni: [], larghezza_min: 60, larghezza_max: 350, altezza_min: 60, altezza_max: 280 }
 }
 
 function OptionGroupEditor({ group, newValue, onNewValueChange, onAddValue, onRemoveValue, onRemoveGroup }: {

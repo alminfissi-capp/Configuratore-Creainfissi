@@ -5,10 +5,17 @@ export interface UserProfile {
   created_at: string
 }
 
+export interface OptionGroup {
+  key: string      // config key + pricing rule prefix, e.g. "colore"
+  label: string    // shown to user, e.g. "Colore"
+  values: string[] // e.g. ["bianco", "grigio-antracite"]
+}
+
+export type TipoListino = 'griglia' | 'catalogo-prodotti' | 'prodotti-su-misura'
+
 export interface AllowedOptions {
-  colori: string[]
-  maniglie: string[]
-  vetri: string[]
+  tipo?: TipoListino
+  opzioni: OptionGroup[]
   larghezza_min: number
   larghezza_max: number
   altezza_min: number
@@ -28,7 +35,7 @@ export interface ProductMapping {
 export interface PricingRule {
   id: string
   category_template: string
-  attribute_key: string      // pattern: {attributeType}_{attributeValue} e.g. "colore_grigio-antracite"
+  attribute_key: string      // pattern: {key}_{value} e.g. "colore_grigio-antracite"
   price_modifier: number
   modifier_type: 'fixed' | 'percentage'
   created_at: string
@@ -58,10 +65,7 @@ export interface Quote {
 }
 
 export interface ConfigurationData {
-  larghezza: number    // cm
-  altezza: number      // cm
-  colore: string
-  maniglia: string
-  vetro: string
-  [key: string]: string | number   // extensible for future templates
+  larghezza: number
+  altezza: number
+  [key: string]: string | number
 }
