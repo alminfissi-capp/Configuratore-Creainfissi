@@ -16,6 +16,7 @@ export function useProductMapping(productId: string | null): UseProductMappingRe
   useEffect(() => {
     if (!productId) {
       setMapping(null)
+      setError(null)
       setLoading(false)
       return
     }
