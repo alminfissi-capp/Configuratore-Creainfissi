@@ -30,3 +30,7 @@ dist-ssr
 
 # Vercel
 .vercel
+
+# Credenziali e artefatti locali
+env.txt
+Creainfissi/

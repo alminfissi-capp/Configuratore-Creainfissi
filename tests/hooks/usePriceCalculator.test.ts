@@ -9,9 +9,11 @@ const mockMapping: ProductMapping = {
   display_name: 'Porta Finestra Classica PVC',
   base_price_sqm: 250,
   allowed_options_json: {
-    colori: ['bianco', 'grigio-antracite'],
-    maniglie: ['maniglia-std', 'maniglia-premium'],
-    vetri: ['vetro-base'],
+    opzioni: [
+      { key: 'colore', label: 'Colore', values: ['bianco', 'grigio-antracite'] },
+      { key: 'maniglia', label: 'Maniglia', values: ['maniglia-std', 'maniglia-premium'] },
+      { key: 'vetro', label: 'Vetro', values: ['vetro-base'] },
+    ],
     larghezza_min: 60,
     larghezza_max: 350,
     altezza_min: 60,

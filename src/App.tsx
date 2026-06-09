@@ -7,6 +7,7 @@ import LoginPage from './routes/LoginPage'
 import PreventiviPage from './routes/PreventiviPage'
 import ConfiguratorPage from './routes/ConfiguratorPage'
 import AdminPage from './routes/AdminPage'
+import AdminLoginPage from './routes/AdminLoginPage'
 import { useAuth } from './hooks/useAuth'
 
 function AppContent() {
@@ -27,6 +28,7 @@ function AppContent() {
               </ProtectedRoute>
             }
           />
+          <Route path="/admin/login" element={<AdminLoginPage />} />
           <Route
             path="/admin"
             element={

@@ -11,13 +11,16 @@ interface TemplatePorteFinestreProps {
 
 export default function TemplatePorteFinestre({ mapping, onSave }: TemplatePorteFinestreProps) {
   const opts = mapping.allowed_options_json
+  const colori = opts.opzioni.find(g => g.key === 'colore')?.values ?? []
+  const maniglie = opts.opzioni.find(g => g.key === 'maniglia')?.values ?? []
+  const vetri = opts.opzioni.find(g => g.key === 'vetro')?.values ?? []
   const [step, setStep] = useState(0)
   const [config, setConfig] = useState<ConfigurationData>({
     larghezza: opts.larghezza_min,
     altezza: opts.altezza_min,
-    colore: opts.colori[0],
-    maniglia: opts.maniglie[0],
-    vetro: opts.vetri[0],
+    colore: colori[0] ?? '',
+    maniglia: maniglie[0] ?? '',
+    vetro: vetri[0] ?? '',
   })
 
   const { price, loading: priceLoading } = usePriceCalculator(mapping, config)
@@ -71,7 +74,7 @@ export default function TemplatePorteFinestre({ mapping, onSave }: TemplatePorte
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           <h2 className="ci-section-title">Scegli il colore</h2>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.75rem' }}>
-            {opts.colori.map(c => (
+            {colori.map(c => (
               <button
                 key={c}
                 onClick={() => set('colore', c)}
@@ -92,7 +95,7 @@ export default function TemplatePorteFinestre({ mapping, onSave }: TemplatePorte
           <div>
             <label className="ci-label">Maniglia</label>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.75rem' }}>
-              {opts.maniglie.map(m => (
+              {maniglie.map(m => (
                 <button
                   key={m}
                   onClick={() => set('maniglia', m)}
@@ -106,7 +109,7 @@ export default function TemplatePorteFinestre({ mapping, onSave }: TemplatePorte
           <div>
             <label className="ci-label">Tipo di vetro</label>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.75rem' }}>
-              {opts.vetri.map(v => (
+              {vetri.map(v => (
                 <button
                   key={v}
                   onClick={() => set('vetro', v)}
