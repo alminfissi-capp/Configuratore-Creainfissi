@@ -9,6 +9,7 @@ export default function PreventiviPage() {
   const navigate = useNavigate()
   const [quotes, setQuotes] = useState<Quote[]>([])
   const [loading, setLoading] = useState(true)
+  const [checkingOut, setCheckingOut] = useState<string | null>(null)
 
   useEffect(() => {
     if (!profile) return
@@ -22,6 +23,21 @@ export default function PreventiviPage() {
         setLoading(false)
       })
   }, [profile])
+
+  async function handleCheckout(quoteId: string) {
+    setCheckingOut(quoteId)
+    const { data: sessionData } = await supabase.auth.getSession()
+    const res = await supabase.functions.invoke('process-checkout', {
+      body: { quoteId },
+      headers: { Authorization: `Bearer ${sessionData.session?.access_token}` },
+    })
+    setCheckingOut(null)
+    if (res.error || res.data?.error) {
+      alert('Errore nel checkout: ' + (res.data?.error ?? res.error?.message))
+      return
+    }
+    window.location.href = res.data.invoice_url
+  }
 
   async function handleSignOut() {
     await signOut()
@@ -85,8 +101,12 @@ export default function PreventiviPage() {
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', alignItems: 'flex-end' }}>
                   {q.status === 'ACTIVE' && (
-                    <button className="ci-btn ci-btn--green ci-btn--sm">
-                      Procedi all'acquisto
+                    <button
+                      onClick={() => handleCheckout(q.id)}
+                      disabled={checkingOut === q.id}
+                      className="ci-btn ci-btn--green ci-btn--sm"
+                    >
+                      {checkingOut === q.id ? 'Elaborazione...' : "Procedi all'acquisto"}
                     </button>
                   )}
                   {q.shopify_invoice_url && (
