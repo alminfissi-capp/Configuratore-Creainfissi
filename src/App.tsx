@@ -5,6 +5,8 @@ import ProtectedRoute from './components/ProtectedRoute'
 import AdminRoute from './components/AdminRoute'
 import LoginPage from './routes/LoginPage'
 import PreventiviPage from './routes/PreventiviPage'
+import ConfiguratorPage from './routes/ConfiguratorPage'
+import AdminPage from './routes/AdminPage'
 import { useAuth } from './hooks/useAuth'
 
 function AppContent() {
@@ -15,11 +17,7 @@ function AppContent() {
       <CiHeader isLoggedIn={!!session} onLogout={signOut} />
       <main style={{ flex: 1, paddingTop: 'var(--topbar-h)' }}>
         <Routes>
-          <Route path="/" element={
-            <div style={{ padding: '2rem 1.5rem', textAlign: 'center', color: 'var(--ci-text-muted)' }}>
-              CreaInfissi Configuratore — in costruzione
-            </div>
-          } />
+          <Route path="/" element={<ConfiguratorPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route
             path="/preventivi"
@@ -33,7 +31,7 @@ function AppContent() {
             path="/admin"
             element={
               <AdminRoute>
-                <div className="p-8 text-2xl">Admin Panel — Fase 6</div>
+                <AdminPage />
               </AdminRoute>
             }
           />
