@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
 import OtpForm from '../../src/components/OtpForm'
 
@@ -24,8 +24,10 @@ vi.mock('../../src/lib/supabase', () => ({
 }))
 
 describe('OtpForm', () => {
-  it('mostra campo email inizialmente', () => {
-    render(<OtpForm onSuccess={vi.fn()} />)
+  it('mostra campo email inizialmente', async () => {
+    await act(async () => {
+      render(<OtpForm onSuccess={vi.fn()} />)
+    })
     expect(screen.getByPlaceholderText(/email/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /invia codice/i })).toBeInTheDocument()
   })
