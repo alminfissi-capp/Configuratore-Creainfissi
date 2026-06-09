@@ -144,10 +144,11 @@ export default function TemplatePorteFinestre({ mapping, onSave }: TemplatePorte
           </div>
           <button
             onClick={() => onSave(config, price)}
+            disabled={priceLoading}
             className="ci-btn ci-btn--green ci-btn--full"
             style={{ fontSize: '1rem', padding: '1rem 2rem' }}
           >
-            Salva preventivo — €{price.toFixed(2)}
+            Salva preventivo — €{price.toLocaleString('it-IT', { minimumFractionDigits: 2 })}
           </button>
         </div>
       ),
