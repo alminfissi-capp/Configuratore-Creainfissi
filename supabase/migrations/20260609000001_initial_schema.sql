@@ -70,7 +70,7 @@ $$;
 
 create trigger on_auth_user_created
   after insert on auth.users
-  for each row execute procedure public.handle_new_user();
+  for each row execute function public.handle_new_user();
 
 -- Index for common query patterns
 create index idx_quotes_user_status on public.quotes(user_id, status);
