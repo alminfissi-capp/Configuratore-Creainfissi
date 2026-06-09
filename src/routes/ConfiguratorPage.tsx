@@ -1,5 +1,5 @@
 import { useSearchParams, useNavigate } from 'react-router-dom'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useProductMapping } from '../hooks/useProductMapping'
 import { useAuth } from '../hooks/useAuth'
 import { supabase } from '../lib/supabase'
@@ -16,6 +16,15 @@ export default function ConfiguratorPage() {
   const [showOtp, setShowOtp] = useState(false)
   const [pendingConfig, setPendingConfig] = useState<{ config: ConfigurationData; price: number } | null>(null)
   const [saving, setSaving] = useState(false)
+
+  // After OTP success, profile loads asynchronously via onAuthStateChange.
+  // This effect fires once profile is available and a pending save is waiting.
+  useEffect(() => {
+    if (pendingConfig && profile && !showOtp) {
+      persistQuote(pendingConfig.config, pendingConfig.price, profile.id)
+      setPendingConfig(null)
+    }
+  }, [profile, pendingConfig, showOtp])
 
   if (!productId) {
     return (
@@ -138,10 +147,9 @@ export default function ConfiguratorPage() {
           </p>
           <OtpForm
             onSuccess={() => {
+              // Profile isn't loaded yet — useEffect above will trigger persistQuote
+              // once onAuthStateChange fires and profile becomes available.
               setShowOtp(false)
-              if (pendingConfig && profile) {
-                persistQuote(pendingConfig.config, pendingConfig.price, profile.id)
-              }
             }}
           />
         </div>
