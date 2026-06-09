@@ -1,0 +1,67 @@
+export interface UserProfile {
+  id: string
+  email: string
+  role: 'user' | 'admin'
+  created_at: string
+}
+
+export interface AllowedOptions {
+  colori: string[]
+  maniglie: string[]
+  vetri: string[]
+  larghezza_min: number
+  larghezza_max: number
+  altezza_min: number
+  altezza_max: number
+}
+
+export interface ProductMapping {
+  shopify_product_id: string
+  category_template: string
+  display_name: string
+  base_price_sqm: number
+  allowed_options_json: AllowedOptions
+  active: boolean
+  created_at: string
+}
+
+export interface PricingRule {
+  id: string
+  category_template: string
+  attribute_key: string      // pattern: {attributeType}_{attributeValue} e.g. "colore_grigio-antracite"
+  price_modifier: number
+  modifier_type: 'fixed' | 'percentage'
+  created_at: string
+}
+
+export interface QuoteItem {
+  id: string
+  quote_id: string
+  shopify_product_id: string
+  category_template: string
+  configuration_json: ConfigurationData
+  item_price: number
+  created_at: string
+}
+
+export interface Quote {
+  id: string
+  user_id: string
+  status: 'ACTIVE' | 'EXPIRED' | 'ORDERED'
+  total_price: number
+  expires_at: string
+  shopify_draft_order_id: string | null
+  shopify_invoice_url: string | null
+  created_at: string
+  updated_at: string
+  quote_items?: QuoteItem[]
+}
+
+export interface ConfigurationData {
+  larghezza: number    // cm
+  altezza: number      // cm
+  colore: string
+  maniglia: string
+  vetro: string
+  [key: string]: string | number   // extensible for future templates
+}
