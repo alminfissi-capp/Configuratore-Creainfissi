@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
-import type { ProductMapping, PricingRule, Quote, AllowedOptions, OptionGroup, TipoListino } from '../types'
+import type { PricingRule, Quote, AllowedOptions, OptionGroup, TipoListino } from '../types'
 
-type Tab = 'listini' | 'prodotti' | 'pricing' | 'quotes'
+type Tab = 'listini' | 'simulatore' | 'pricing' | 'quotes'
 
 interface Famiglia {
   id: string
@@ -24,7 +24,7 @@ export default function AdminPage() {
   const [tab, setTab] = useState<Tab>('listini')
   const tabs: { key: Tab; label: string }[] = [
     { key: 'listini', label: 'Listini' },
-    { key: 'prodotti', label: 'Prodotti' },
+    { key: 'simulatore', label: 'Simulatore Configurazione' },
     { key: 'pricing', label: 'Regole Prezzo' },
     { key: 'quotes', label: 'Preventivi' },
   ]
@@ -48,7 +48,7 @@ export default function AdminPage() {
         ))}
       </div>
       {tab === 'listini' && <ListiniTab />}
-      {tab === 'prodotti' && <ProdottiTab />}
+      {tab === 'simulatore' && <SimulatoreTab />}
       {tab === 'pricing' && <PricingRulesTab />}
       {tab === 'quotes' && <QuotesTab />}
     </div>
@@ -424,67 +424,93 @@ function ListiniTab() {
 }
 
 /* ══════════════════════════════════════════════
-   TAB PRODOTTI
+   TAB SIMULATORE CONFIGURAZIONE
+   Sceglie listino + opzioni + misure e mostra il prezzo
+   calcolato con la stessa logica del configuratore cliente.
+   Non salva nulla.
 ══════════════════════════════════════════════ */
 
-function ProdottiTab() {
-  const [mappings, setMappings] = useState<ProductMapping[]>([])
+function SimulatoreTab() {
   const [listini, setListini] = useState<Listino[]>([])
+  const [rules, setRules] = useState<PricingRule[]>([])
   const [loading, setLoading] = useState(true)
-  const [shopifyId, setShopifyId] = useState('')
-  const [displayName, setDisplayName] = useState('')
-  const [selectedListinoSlug, setSelectedListinoSlug] = useState('')
-  const [price, setPrice] = useState('')
-  const [editing, setEditing] = useState<string | null>(null)
+  const [rulesLoading, setRulesLoading] = useState(false)
+
+  const [selectedSlug, setSelectedSlug] = useState('')
+  const [basePrice, setBasePrice] = useState('')
+  const [larghezza, setLarghezza] = useState('')
+  const [altezza, setAltezza] = useState('')
+  const [scelte, setScelte] = useState<Record<string, string>>({})
 
   useEffect(() => {
-    Promise.all([
-      supabase.from('product_mappings').select('*').order('display_name'),
-      supabase.from('listini').select('*').order('nome'),
-    ]).then(([{ data: m }, { data: l }]) => {
-      setMappings((m ?? []) as ProductMapping[])
-      setListini((l ?? []) as Listino[])
+    supabase.from('listini').select('*').order('nome').then(({ data }) => {
+      setListini((data ?? []) as Listino[])
       setLoading(false)
     })
   }, [])
 
-  function resetForm() { setShopifyId(''); setDisplayName(''); setSelectedListinoSlug(''); setPrice(''); setEditing(null) }
+  const selectedListino = listini.find(l => l.slug === selectedSlug)
+  const opzioni: OptionGroup[] = selectedListino?.options_json?.opzioni ?? []
 
-  function startEdit(m: ProductMapping) {
-    setEditing(m.shopify_product_id); setShopifyId(m.shopify_product_id)
-    setDisplayName(m.display_name); setSelectedListinoSlug(m.category_template); setPrice(String(m.base_price_sqm))
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+  // Carica le regole prezzo del listino selezionato
+  useEffect(() => {
+    if (!selectedSlug) return
+    supabase.from('pricing_rules').select('*').eq('category_template', selectedSlug).then(({ data }) => {
+      setRules((data ?? []) as PricingRule[])
+      setRulesLoading(false)
+    })
+  }, [selectedSlug])
+
+  function onSelectListino(slug: string) {
+    setSelectedSlug(slug)
+    setRules([])
+    setRulesLoading(!!slug)
+    const l = listini.find(x => x.slug === slug)
+    setLarghezza(l ? String(l.options_json?.larghezza_min ?? '') : '')
+    setAltezza(l ? String(l.options_json?.altezza_min ?? '') : '')
+    setScelte({})
   }
 
-  async function handleSave() {
-    if (!shopifyId.trim() || !displayName.trim() || !selectedListinoSlug || !price) { alert('Compila tutti i campi'); return }
-    const listino = listini.find(l => l.slug === selectedListinoSlug)
-    if (!listino) { alert('Listino non trovato'); return }
-    const payload: Partial<ProductMapping> = {
-      shopify_product_id: shopifyId.trim(), display_name: displayName.trim(),
-      category_template: selectedListinoSlug, base_price_sqm: Number(price),
-      allowed_options_json: listino.options_json,
+  // Calcolo prezzo (stessa formula di usePriceCalculator)
+  const larghezzaN = Number(larghezza)
+  const altezzaN = Number(altezza)
+  const basePriceN = Number(basePrice)
+  const inputsValidi = !!selectedListino && larghezzaN > 0 && altezzaN > 0 && basePriceN > 0
+
+  let mq = 0
+  let prezzoBase = 0
+  let prezzoFinale = 0
+  const dettaglioRegole: { label: string; delta: number }[] = []
+
+  if (inputsValidi) {
+    mq = (larghezzaN / 100) * (altezzaN / 100)
+    prezzoBase = mq * basePriceN
+    let total = prezzoBase
+    for (const rule of rules) {
+      const underscoreIdx = rule.attribute_key.indexOf('_')
+      if (underscoreIdx < 0) continue
+      const attributeType = rule.attribute_key.slice(0, underscoreIdx)
+      const attributeValue = rule.attribute_key.slice(underscoreIdx + 1)
+      if (String(scelte[attributeType] ?? '') !== attributeValue) continue
+      const delta = rule.modifier_type === 'percentage' ? total * (rule.price_modifier / 100) : rule.price_modifier
+      total += delta
+      const gruppo = opzioni.find(g => g.key === attributeType)
+      dettaglioRegole.push({ label: `${gruppo?.label ?? attributeType}: ${attributeValue}`, delta })
     }
-    const { error } = await supabase.from('product_mappings').upsert(payload)
-    if (error) { alert(error.message); return }
-    resetForm()
-    const { data } = await supabase.from('product_mappings').select('*').order('display_name')
-    setMappings((data ?? []) as ProductMapping[])
+    prezzoFinale = Math.round(total * 100) / 100
   }
 
-  async function handleDelete(id: string) {
-    if (!confirm('Eliminare questo prodotto?')) return
-    await supabase.from('product_mappings').delete().eq('shopify_product_id', id)
-    setMappings(m => m.filter(x => x.shopify_product_id !== id))
-  }
+  const lMin = selectedListino?.options_json?.larghezza_min
+  const lMax = selectedListino?.options_json?.larghezza_max
+  const hMin = selectedListino?.options_json?.altezza_min
+  const hMax = selectedListino?.options_json?.altezza_max
 
   if (loading) return <LoadingSkeleton />
-  const selectedListino = listini.find(l => l.slug === selectedListinoSlug)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
       <div className="ci-card" style={{ padding: '1.5rem' }}>
-        <h2 style={sectionTitleStyle}>{editing ? 'Modifica prodotto' : 'Aggiungi prodotto Shopify'}</h2>
+        <h2 style={sectionTitleStyle}>Parametri configurazione</h2>
         {listini.length === 0 && (
           <div className="ci-alert ci-alert--error" style={{ marginBottom: '1rem' }}>
             Nessun listino disponibile. Crea prima un listino dalla tab "Listini".
@@ -492,67 +518,82 @@ function ProdottiTab() {
         )}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
           <div>
-            <label style={labelStyle}>ID Shopify</label>
-            <input className="ci-input" placeholder="es. 8123456789" value={shopifyId} onChange={e => setShopifyId(e.target.value)} disabled={!!editing} />
-          </div>
-          <div>
-            <label style={labelStyle}>Nome prodotto</label>
-            <input className="ci-input" placeholder="es. Finestra Classica PVC 70mm" value={displayName} onChange={e => setDisplayName(e.target.value)} />
-          </div>
-          <div>
             <label style={labelStyle}>Listino</label>
-            <select className="ci-input" value={selectedListinoSlug} onChange={e => setSelectedListinoSlug(e.target.value)}>
+            <select className="ci-input" value={selectedSlug} onChange={e => onSelectListino(e.target.value)}>
               <option value="">Seleziona listino...</option>
               {listini.map(l => <option key={l.slug} value={l.slug}>{l.nome} ({l.slug})</option>)}
             </select>
           </div>
           <div>
             <label style={labelStyle}>Prezzo base (€/mq)</label>
-            <input className="ci-input" type="number" placeholder="es. 250" value={price} onChange={e => setPrice(e.target.value)} />
+            <input className="ci-input" type="number" placeholder="es. 250" value={basePrice} onChange={e => setBasePrice(e.target.value)} disabled={!selectedListino} />
           </div>
         </div>
+
         {selectedListino && (
-          <div style={{ background: 'var(--ci-teal-light)', borderRadius: '8px', padding: '0.75rem 1rem', marginBottom: '1rem', fontSize: '0.8rem' }}>
-            <span style={{ fontWeight: 600, color: 'var(--ci-teal)' }}>{selectedListino.nome}</span>
-            <span style={{ color: 'var(--ci-text-muted)', marginLeft: '1rem' }}>
-              Campi: {selectedListino.options_json?.opzioni?.map(g => g.label).join(', ') || 'nessuno'} ·
-              L {selectedListino.options_json?.larghezza_min}–{selectedListino.options_json?.larghezza_max} ·
-              H {selectedListino.options_json?.altezza_min}–{selectedListino.options_json?.altezza_max} cm
-            </span>
-          </div>
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
+              <div>
+                <label style={labelStyle}>Larghezza (cm){lMin != null && lMax != null ? ` · ${lMin}–${lMax}` : ''}</label>
+                <input className="ci-input" type="number" value={larghezza} onChange={e => setLarghezza(e.target.value)} />
+              </div>
+              <div>
+                <label style={labelStyle}>Altezza (cm){hMin != null && hMax != null ? ` · ${hMin}–${hMax}` : ''}</label>
+                <input className="ci-input" type="number" value={altezza} onChange={e => setAltezza(e.target.value)} />
+              </div>
+            </div>
+
+            {opzioni.length > 0 && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '0.75rem', marginBottom: '0.25rem' }}>
+                {opzioni.map(g => (
+                  <div key={g.key}>
+                    <label style={labelStyle}>{g.label}</label>
+                    <select className="ci-input" value={scelte[g.key] ?? ''} onChange={e => setScelte(s => ({ ...s, [g.key]: e.target.value }))}>
+                      <option value="">— nessuna —</option>
+                      {g.values.map(v => <option key={v} value={v}>{v}</option>)}
+                    </select>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
         )}
-        <div style={{ display: 'flex', gap: '0.75rem' }}>
-          <button onClick={handleSave} disabled={listini.length === 0} className="ci-btn ci-btn--teal">{editing ? 'Aggiorna' : 'Aggiungi prodotto'}</button>
-          {editing && <button onClick={resetForm} style={cancelBtnStyle}>Annulla</button>}
-        </div>
       </div>
 
-      {mappings.length > 0 && (
-        <div style={{ background: 'var(--ci-bg)', borderRadius: '8px', padding: '0.875rem 1rem', fontSize: '0.8rem', color: 'var(--ci-text-muted)' }}>
-          <strong style={{ color: 'var(--ci-graphite)' }}>Link configuratore: </strong>
-          {window.location.origin}/?product_id=<strong>[ID Shopify]</strong>
+      {inputsValidi && (
+        <div className="ci-card" style={{ padding: '1.5rem' }}>
+          <h2 style={sectionTitleStyle}>Prezzo simulato {rulesLoading && <span style={{ fontWeight: 400, color: 'var(--ci-text-muted)' }}>(carico regole…)</span>}</h2>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
+            <tbody>
+              <tr>
+                <Td style={{ color: 'var(--ci-text-muted)' }}>Superficie</Td>
+                <Td style={{ fontFamily: 'Open Sans, sans-serif', textAlign: 'right' }}>{mq.toFixed(3)} mq</Td>
+              </tr>
+              <tr>
+                <Td style={{ color: 'var(--ci-text-muted)' }}>Prezzo base ({mq.toFixed(3)} mq × €{basePriceN}/mq)</Td>
+                <Td style={{ fontFamily: 'Open Sans, sans-serif', textAlign: 'right' }}>€{prezzoBase.toFixed(2)}</Td>
+              </tr>
+              {dettaglioRegole.map((d, i) => (
+                <tr key={i}>
+                  <Td style={{ color: 'var(--ci-text-muted)' }}>{d.label}</Td>
+                  <Td style={{ fontFamily: 'Open Sans, sans-serif', textAlign: 'right' }}>{d.delta >= 0 ? '+' : ''}€{d.delta.toFixed(2)}</Td>
+                </tr>
+              ))}
+              {!rulesLoading && dettaglioRegole.length === 0 && (
+                <tr>
+                  <Td colSpan={2} style={{ color: 'var(--ci-text-muted)', fontStyle: 'italic' }}>Nessuna regola prezzo applicata a questa configurazione.</Td>
+                </tr>
+              )}
+            </tbody>
+            <tfoot>
+              <tr>
+                <Td style={{ fontWeight: 700, color: 'var(--ci-graphite)', borderTop: '2px solid var(--ci-border)' }}>Totale</Td>
+                <Td style={{ fontFamily: 'Open Sans, sans-serif', fontWeight: 700, fontSize: '1.1rem', color: 'var(--ci-teal)', textAlign: 'right', borderTop: '2px solid var(--ci-border)' }}>€{prezzoFinale.toFixed(2)}</Td>
+              </tr>
+            </tfoot>
+          </table>
         </div>
       )}
-
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
-        <thead><tr style={{ background: 'var(--ci-bg)' }}>
-          <Th>ID Shopify</Th><Th>Nome</Th><Th>Listino</Th><Th>€/mq</Th><Th>Azioni</Th>
-        </tr></thead>
-        <tbody>
-          {mappings.map(m => (
-            <tr key={m.shopify_product_id}>
-              <Td><code style={{ fontSize: '0.75rem' }}>{m.shopify_product_id}</code></Td>
-              <Td style={{ fontWeight: 500 }}>{m.display_name}</Td>
-              <Td><span style={{ background: 'var(--ci-teal-light)', color: 'var(--ci-teal)', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600 }}>{m.category_template}</span></Td>
-              <Td style={{ fontFamily: 'Open Sans, sans-serif' }}>€{m.base_price_sqm}</Td>
-              <Td><div style={{ display: 'flex', gap: '0.75rem' }}>
-                <button onClick={() => startEdit(m)} style={editBtnStyle}>Modifica</button>
-                <button onClick={() => handleDelete(m.shopify_product_id)} style={deleteBtnStyle}>Elimina</button>
-              </div></Td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
     </div>
   )
 }
@@ -562,120 +603,10 @@ function ProdottiTab() {
 ══════════════════════════════════════════════ */
 
 function PricingRulesTab() {
-  const [rules, setRules] = useState<PricingRule[]>([])
-  const [listini, setListini] = useState<Listino[]>([])
-  const [loading, setLoading] = useState(true)
-  const [form, setForm] = useState<Partial<PricingRule>>({ modifier_type: 'fixed' })
-  const [filterSlug, setFilterSlug] = useState('')
-
-  useEffect(() => {
-    Promise.all([
-      supabase.from('pricing_rules').select('*').order('category_template'),
-      supabase.from('listini').select('*').order('nome'),
-    ]).then(([{ data: r }, { data: l }]) => {
-      setRules((r ?? []) as PricingRule[])
-      setListini((l ?? []) as Listino[])
-      setLoading(false)
-    })
-  }, [])
-
-  const selectedListino = listini.find(l => l.slug === form.category_template)
-  const opzioni: OptionGroup[] = selectedListino?.options_json?.opzioni ?? []
-  const selectedGroupKey = form.attribute_key?.split('_')[0] ?? ''
-  const selectedGroup = opzioni.find(g => g.key === selectedGroupKey)
-  const currentVal = form.attribute_key && selectedGroupKey ? form.attribute_key.slice(selectedGroupKey.length + 1) : ''
-
-  async function handleSave() {
-    if (!form.category_template || !form.attribute_key || !form.attribute_key.includes('_') || form.price_modifier === undefined) {
-      alert('Compila tutti i campi'); return
-    }
-    const { error } = await supabase.from('pricing_rules').insert(form as PricingRule)
-    if (error) { alert(error.message); return }
-    setForm({ modifier_type: 'fixed' })
-    const { data } = await supabase.from('pricing_rules').select('*').order('category_template')
-    setRules((data ?? []) as PricingRule[])
-  }
-
-  async function handleDelete(id: string) {
-    if (!confirm('Eliminare questa regola?')) return
-    await supabase.from('pricing_rules').delete().eq('id', id)
-    setRules(r => r.filter(x => x.id !== id))
-  }
-
-  if (loading) return <LoadingSkeleton />
-  const filtered = filterSlug ? rules.filter(r => r.category_template === filterSlug) : rules
-
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-      <div className="ci-card" style={{ padding: '1.25rem' }}>
-        <h2 style={sectionTitleStyle}>Aggiungi regola di prezzo</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
-          <div>
-            <label style={labelStyle}>Listino</label>
-            <select className="ci-input" value={form.category_template ?? ''} onChange={e => setForm({ modifier_type: 'fixed', category_template: e.target.value })}>
-              <option value="">Seleziona listino...</option>
-              {listini.map(l => <option key={l.slug} value={l.slug}>{l.nome}</option>)}
-            </select>
-          </div>
-          <div>
-            <label style={labelStyle}>Tipo</label>
-            <select className="ci-input" value={form.modifier_type} onChange={e => setForm(f => ({ ...f, modifier_type: e.target.value as 'fixed' | 'percentage' }))}>
-              <option value="fixed">Fisso (€)</option>
-              <option value="percentage">Percentuale (%)</option>
-            </select>
-          </div>
-        </div>
-        {form.category_template && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
-            <div>
-              <label style={labelStyle}>Campo</label>
-              <select className="ci-input" value={selectedGroupKey} onChange={e => setForm(f => ({ ...f, attribute_key: e.target.value ? `${e.target.value}_` : '' }))}>
-                <option value="">Seleziona campo...</option>
-                {opzioni.map(g => <option key={g.key} value={g.key}>{g.label}</option>)}
-              </select>
-            </div>
-            <div>
-              <label style={labelStyle}>Valore</label>
-              {selectedGroup ? (
-                <select className="ci-input" value={currentVal} onChange={e => setForm(f => ({ ...f, attribute_key: `${selectedGroupKey}_${e.target.value}` }))}>
-                  <option value="">Seleziona...</option>
-                  {selectedGroup.values.map(v => <option key={v} value={v}>{v}</option>)}
-                </select>
-              ) : <input className="ci-input" disabled placeholder="—" />}
-            </div>
-            <div>
-              <label style={labelStyle}>Importo ({form.modifier_type === 'percentage' ? '%' : '€'})</label>
-              <input className="ci-input" type="number" placeholder="0" value={form.price_modifier ?? ''} onChange={e => setForm(f => ({ ...f, price_modifier: Number(e.target.value) }))} />
-            </div>
-          </div>
-        )}
-        <button onClick={handleSave} className="ci-btn ci-btn--teal">Salva regola</button>
-      </div>
-
-      <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-        <select className="ci-input" style={{ maxWidth: '240px' }} value={filterSlug} onChange={e => setFilterSlug(e.target.value)}>
-          <option value="">Tutti i listini</option>
-          {listini.map(l => <option key={l.slug} value={l.slug}>{l.nome}</option>)}
-        </select>
-        <span style={{ fontSize: '0.8rem', color: 'var(--ci-text-muted)' }}>{filtered.length} regole</span>
-      </div>
-
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
-        <thead><tr style={{ background: 'var(--ci-bg)' }}>
-          <Th>Listino</Th><Th>Campo → Valore</Th><Th>Importo</Th><Th>Tipo</Th><Th>Azioni</Th>
-        </tr></thead>
-        <tbody>
-          {filtered.map(r => (
-            <tr key={r.id}>
-              <Td><span style={{ background: 'var(--ci-teal-light)', color: 'var(--ci-teal)', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600 }}>{r.category_template}</span></Td>
-              <Td><code style={{ fontSize: '0.75rem' }}>{r.attribute_key}</code></Td>
-              <Td style={{ fontFamily: 'Open Sans, sans-serif', fontWeight: 600 }}>{r.price_modifier}{r.modifier_type === 'percentage' ? '%' : '€'}</Td>
-              <Td style={{ fontSize: '0.8rem', color: 'var(--ci-text-muted)' }}>{r.modifier_type}</Td>
-              <Td><button onClick={() => handleDelete(r.id)} style={deleteBtnStyle}>Elimina</button></Td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div style={{ textAlign: 'center', padding: '4rem 2rem', color: 'var(--ci-text-muted)', fontFamily: 'Montserrat, sans-serif' }}>
+      <p style={{ fontSize: '1rem', marginBottom: '0.5rem', color: 'var(--ci-graphite)', fontWeight: 600 }}>Regole Prezzo</p>
+      <p style={{ fontSize: '0.875rem' }}>Sezione in arrivo.</p>
     </div>
   )
 }
@@ -761,8 +692,8 @@ function OptionGroupEditor({ group, newValue, onNewValueChange, onAddValue, onRe
 function Th({ children }: { children: React.ReactNode }) {
   return <th style={{ fontFamily: 'Montserrat, sans-serif', fontWeight: 600, fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--ci-text-muted)', textAlign: 'left', padding: '0.625rem 0.75rem', borderBottom: '2px solid var(--ci-border)' }}>{children}</th>
 }
-function Td({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
-  return <td style={{ padding: '0.625rem 0.75rem', borderBottom: '1px solid var(--ci-border-light)', color: 'var(--ci-text)', ...style }}>{children}</td>
+function Td({ children, style, colSpan }: { children: React.ReactNode; style?: React.CSSProperties; colSpan?: number }) {
+  return <td colSpan={colSpan} style={{ padding: '0.625rem 0.75rem', borderBottom: '1px solid var(--ci-border-light)', color: 'var(--ci-text)', ...style }}>{children}</td>
 }
 function LoadingSkeleton() {
   return <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>{[1,2,3].map(i => <div key={i} className="ci-skeleton" style={{ height: '44px', borderRadius: '4px' }} />)}</div>
